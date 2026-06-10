@@ -1,46 +1,32 @@
-"""Application entry point."""
+"""GUI application entry point."""
 
 from __future__ import annotations
 
+import io
 import logging
 import sys
 
 
-def self_test() -> int:
-    """Import-level smoke test for the frozen build (run with --self-test)."""
-    try:
-        import onnxruntime  # noqa: F401
-        import PySide6  # noqa: F401
-        import torch  # noqa: F401
-        from transformers.models.paddleocr_vl import modeling_paddleocr_vl  # noqa: F401
-        from transformers.models.rt_detr_v2 import modeling_rt_detr_v2  # noqa: F401
-
-        from .pipeline import detector, inpaint, ocr, translator, typeset  # noqa: F401
-        from .pipeline.typeset import pick_font_file
-
-        pick_font_file("auto", "th")
-        pick_font_file("auto", "en")
-        print("self-test OK")
-        return 0
-    except Exception:
-        import traceback
-
-        # windowed builds have no stdout/stderr; leave a log next to the cwd
-        trace = traceback.format_exc()
-        print(f"self-test FAILED:\n{trace}", file=sys.stderr)
-        try:
-            from pathlib import Path
-
-            Path("self_test_error.log").write_text(trace, encoding="utf-8")
-        except OSError:
-            pass
-        return 1
+def _guard_windowed_stdio() -> None:
+    """In windowed (no-console) builds sys.stdout/stderr are None; libraries
+    like tqdm/transformers write to them during import and inference, so give
+    them a sink instead of letting attribute errors (or blocked writes) happen.
+    """
+    if sys.stdout is None:
+        sys.stdout = io.StringIO()
+    if sys.stderr is None:
+        sys.stderr = io.StringIO()
+    sys.__stdout__ = sys.stdout
+    sys.__stderr__ = sys.stderr
 
 
 def main() -> int:
+    _guard_windowed_stdio()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     if "--self-test" in sys.argv:
+        from .cli import self_test
+
         return self_test()
 
     from PySide6.QtWidgets import QApplication
