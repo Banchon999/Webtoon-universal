@@ -22,8 +22,18 @@ def self_test() -> int:
         pick_font_file("auto", "en")
         print("self-test OK")
         return 0
-    except Exception as e:
-        print(f"self-test FAILED: {e}", file=sys.stderr)
+    except Exception:
+        import traceback
+
+        # windowed builds have no stdout/stderr; leave a log next to the cwd
+        trace = traceback.format_exc()
+        print(f"self-test FAILED:\n{trace}", file=sys.stderr)
+        try:
+            from pathlib import Path
+
+            Path("self_test_error.log").write_text(trace, encoding="utf-8")
+        except OSError:
+            pass
         return 1
 
 
