@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+    branches: ["claude/webtoon-translator-app-fwwjzn"]
 
 jobs:
   build:
