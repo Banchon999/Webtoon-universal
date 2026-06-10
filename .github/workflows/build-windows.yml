@@ -6,9 +6,14 @@ on:
     tags: ["v*"]
     branches: ["claude/webtoon-translator-app-fwwjzn"]
 
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -26,12 +31,12 @@ jobs:
 
       - name: Smoke test
         shell: pwsh
-        # GUI-subsystem exe: PowerShell won't wait or surface the exit code on a direct call
+        timeout-minutes: 10
         run: |
-          $p = Start-Process -FilePath dist/WebtoonTranslator/WebtoonTranslator.exe -ArgumentList '--self-test' -PassThru -Wait -NoNewWindow
-          if ($p.ExitCode -ne 0) {
+          & dist/WebtoonTranslator/WebtoonTranslatorCLI.exe --self-test
+          if ($LASTEXITCODE -ne 0) {
             if (Test-Path self_test_error.log) { Get-Content self_test_error.log }
-            Write-Error "self-test failed with exit code $($p.ExitCode)"
+            Write-Error "self-test failed with exit code $LASTEXITCODE"
             exit 1
           }
 

@@ -1,6 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for the Windows build (onedir).
 
+Produces two executables sharing one _internal directory:
+    WebtoonTranslator.exe     - windowed GUI app
+    WebtoonTranslatorCLI.exe  - console app: --self-test and headless batch use
+
 Build from the repo root:
     pyinstaller packaging/webtoon_translator.spec
 """
@@ -46,8 +50,7 @@ excludes = [
     "PySide6.QtPdf",
 ]
 
-a = Analysis(
-    [os.path.join(REPO, "src", "webtoon_translator", "__main__.py")],
+common = dict(
     pathex=[os.path.join(REPO, "src")],
     binaries=[],
     datas=datas,
@@ -58,28 +61,48 @@ a = Analysis(
     noarchive=False,
 )
 
-pyz = PYZ(a.pure)
+a_gui = Analysis([os.path.join(REPO, "src", "webtoon_translator", "__main__.py")], **common)
+a_cli = Analysis([os.path.join(REPO, "packaging", "cli_entry.py")], **common)
+
+pyz_gui = PYZ(a_gui.pure)
+pyz_cli = PYZ(a_cli.pure)
 
 icon_path = os.path.join(REPO, "assets", "icons", "app.ico")
+icon = icon_path if os.path.exists(icon_path) else None
 
-exe = EXE(
-    pyz,
-    a.scripts,
+exe_gui = EXE(
+    pyz_gui,
+    a_gui.scripts,
     [],
     exclude_binaries=True,
     name="WebtoonTranslator",
     debug=False,
-    bootloader_ignore_signals=False,
     strip=False,
     upx=False,  # UPX corrupts torch/Qt DLLs
     console=False,
-    icon=icon_path if os.path.exists(icon_path) else None,
+    icon=icon,
+)
+
+exe_cli = EXE(
+    pyz_cli,
+    a_cli.scripts,
+    [],
+    exclude_binaries=True,
+    name="WebtoonTranslatorCLI",
+    debug=False,
+    strip=False,
+    upx=False,
+    console=True,
+    icon=icon,
 )
 
 coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
+    exe_gui,
+    exe_cli,
+    a_gui.binaries,
+    a_gui.datas,
+    a_cli.binaries,
+    a_cli.datas,
     strip=False,
     upx=False,
     name="WebtoonTranslator",
