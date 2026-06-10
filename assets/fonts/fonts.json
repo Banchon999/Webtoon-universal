@@ -1,0 +1,20 @@
+{
+  "fonts": [
+    {
+      "name": "Noto Sans",
+      "file": "NotoSans-Regular.ttf",
+      "bold_file": "NotoSans-Bold.ttf",
+      "scripts": ["latin", "cyrillic", "greek"]
+    },
+    {
+      "name": "Sarabun",
+      "file": "Sarabun-Regular.ttf",
+      "bold_file": "Sarabun-Bold.ttf",
+      "scripts": ["thai", "latin"]
+    }
+  ],
+  "defaults": {
+    "th": "Sarabun",
+    "*": "Noto Sans"
+  }
+}
