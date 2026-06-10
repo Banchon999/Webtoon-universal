@@ -1,0 +1,48 @@
+name: Build Windows exe
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies (CPU torch)
+        run: |
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install "pyinstaller>=6.10"
+
+      - name: Build with PyInstaller
+        run: pyinstaller packaging/webtoon_translator.spec --noconfirm
+
+      - name: Smoke test
+        run: dist/WebtoonTranslator/WebtoonTranslator.exe --self-test
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          $version = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}' } else { '${{ github.sha }}'.Substring(0, 7) }
+          7z a -mx=5 "WebtoonTranslator-win64-$version.zip" ./dist/WebtoonTranslator
+          Get-ChildItem *.zip | ForEach-Object { "{0}  {1:N0} MB" -f $_.Name, ($_.Length / 1MB) }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebtoonTranslator-win64
+          path: WebtoonTranslator-win64-*.zip
+          compression-level: 0
+
+      - name: Release (tags only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: WebtoonTranslator-win64-*.zip
+          draft: false

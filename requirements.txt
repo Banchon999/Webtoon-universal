@@ -1,0 +1,16 @@
+# Core ML (install torch CPU wheels via: pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu)
+torch>=2.6
+torchvision>=0.21
+transformers>=5.0,<6
+huggingface_hub>=0.30
+onnxruntime>=1.20
+# GUI
+PySide6>=6.7
+# Imaging
+Pillow>=10.4
+opencv-python-headless>=4.10
+numpy>=1.26,<3
+# Networking / misc
+httpx>=0.27
+platformdirs>=4
+pythainlp>=5
