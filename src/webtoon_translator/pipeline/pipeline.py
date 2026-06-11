@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from PIL import Image
 from ..core.device import onnx_providers, pick_device
 from ..core.models import ALL_STAGES, Page, Project, Stage
 from ..download import manager
-from .detector import BubbleDetector, reading_order
+from .detector import BubbleDetector, OnnxBubbleDetector, reading_order
 from .inpaint import LamaInpainter
 from .ocr import OcrEngine
 from .translator import DummyTranslator, OpenRouterTranslator, TranslatorConfig
@@ -49,6 +50,9 @@ class PipelineSettings:
     api_key: str = ""
     use_dummy_translator: bool = False  # tests/CI
     work_dir: Path = field(default_factory=lambda: Path("."))
+    ocr_batch_size: int = 4
+    cpu_threads: int = 0  # 0 = all cores
+    min_region_px: int = 12  # skip OCR on regions smaller than this on either side
 
 
 class TranslationPipeline:
@@ -61,18 +65,32 @@ class TranslationPipeline:
         self.settings = settings
         self.progress_cb = progress_cb or (lambda *a: None)
         self.cancel_event = cancel_event or threading.Event()
-        self._detector: BubbleDetector | None = None
+        self._detector: OnnxBubbleDetector | BubbleDetector | None = None
         self._ocr: OcrEngine | None = None
         self._inpainter: LamaInpainter | None = None
+        self._apply_thread_settings()
+
+    def _apply_thread_settings(self) -> None:
+        if self.settings.cpu_threads > 0:
+            try:
+                import torch
+
+                torch.set_num_threads(self.settings.cpu_threads)
+            except Exception:
+                pass
 
     # -- lazy model accessors -------------------------------------------------
 
     @property
-    def detector(self) -> BubbleDetector:
+    def detector(self) -> OnnxBubbleDetector | BubbleDetector:
         if self._detector is None:
-            self._detector = BubbleDetector(
-                manager.model_path("detector"), pick_device(self.settings.device_preference)
-            )
+            model_dir = manager.model_path("detector")
+            if (model_dir / OnnxBubbleDetector.ONNX_FILE).exists():
+                self._detector = OnnxBubbleDetector(model_dir, onnx_providers())
+            else:  # older downloads only have the torch weights
+                self._detector = BubbleDetector(
+                    model_dir, pick_device(self.settings.device_preference)
+                )
         return self._detector
 
     @property
@@ -129,11 +147,24 @@ class TranslationPipeline:
 
     def run_ocr(self, page: Page) -> None:
         image = Image.open(page.source_path).convert("RGB")
-        targets = [r for r in page.text_regions() if not r.ocr_edited]
-        for i, region in enumerate(targets):
+        min_px = self.settings.min_region_px
+        targets = [
+            r
+            for r in page.text_regions()
+            if not r.ocr_edited and r.width >= min_px and r.height >= min_px
+        ]
+        batch = max(1, self.settings.ocr_batch_size)
+        done = 0
+        for i in range(0, len(targets), batch):
             self._check_cancel()
-            self._progress(page, Stage.OCR, i / max(1, len(targets)), f"OCR {i + 1}/{len(targets)}")
-            region.ocr_text = self.ocr.recognize_region(image, region)
+            chunk = targets[i : i + batch]
+            self._progress(
+                page, Stage.OCR, done / max(1, len(targets)), f"OCR {done + 1}-{done + len(chunk)}/{len(targets)}"
+            )
+            crops = [self.ocr.crop_region(image, r) for r in chunk]
+            for region, text in zip(chunk, self.ocr.recognize_batch(crops)):
+                region.ocr_text = text
+            done += len(chunk)
         page.mark_done(Stage.OCR)
         self._progress(page, Stage.OCR, 1.0)
 
@@ -186,22 +217,34 @@ class TranslationPipeline:
         pages: list[Page] | None = None,
         stages: tuple[Stage, ...] = ALL_STAGES,
     ) -> None:
+        """Per page: detect -> ocr -> [translate (network) overlapped with
+        inpaint (CPU)] -> typeset. Translation runs in a helper thread so API
+        latency is hidden behind inpainting."""
         pages = pages if pages is not None else project.pages
         translator = None
         try:
             if Stage.TRANSLATE in stages:
                 translator = self._make_translator(project)
-            for page in pages:
-                if Stage.DETECT in stages and Stage.DETECT not in page.stages_done:
-                    self.run_detect(page)
-                if Stage.OCR in stages:
-                    self.run_ocr(page)
-                if Stage.TRANSLATE in stages:
-                    self.run_translate(page, project, translator)
-                if Stage.INPAINT in stages:
-                    self.run_inpaint(page)
-                if Stage.TYPESET in stages:
-                    self.run_typeset(page, project)
+            with ThreadPoolExecutor(max_workers=1, thread_name_prefix="translate") as pool:
+                for page in pages:
+                    if Stage.DETECT in stages and Stage.DETECT not in page.stages_done:
+                        self.run_detect(page)
+                    if Stage.OCR in stages:
+                        self.run_ocr(page)
+                    translate_future = None
+                    if Stage.TRANSLATE in stages:
+                        translate_future = pool.submit(self.run_translate, page, project, translator)
+                    if Stage.INPAINT in stages:
+                        try:
+                            self.run_inpaint(page)
+                        except BaseException:
+                            if translate_future is not None:
+                                translate_future.cancel()
+                            raise
+                    if translate_future is not None:
+                        translate_future.result()  # surface translation errors
+                    if Stage.TYPESET in stages:
+                        self.run_typeset(page, project)
         finally:
             if translator is not None:
                 translator.close()

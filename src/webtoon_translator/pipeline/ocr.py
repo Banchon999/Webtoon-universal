@@ -56,13 +56,51 @@ class OcrEngine:
         text = self.processor.decode(new_tokens, skip_special_tokens=True)
         return clean_ocr_text(text)
 
-    def recognize_region(self, page_image: Image.Image, region: TextRegion) -> str:
+    def recognize_batch(self, crops: list[Image.Image]) -> list[str]:
+        """Recognize several crops in one generate() call (left padding)."""
+        if not crops:
+            return []
+        if len(crops) == 1:
+            return [self.recognize(crops[0])]
+        messages = [
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": crop.convert("RGB")},
+                        {"type": "text", "text": "OCR:"},
+                    ],
+                }
+            ]
+            for crop in crops
+        ]
+        self.processor.tokenizer.padding_side = "left"
+        inputs = self.processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+            padding=True,
+        ).to(self.device)
+        with self._torch.inference_mode():
+            out = self.model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS, do_sample=False)
+        prompt_len = inputs["input_ids"].shape[-1]
+        return [
+            clean_ocr_text(self.processor.decode(seq[prompt_len:], skip_special_tokens=True))
+            for seq in out
+        ]
+
+    @staticmethod
+    def crop_region(page_image: Image.Image, region: TextRegion) -> Image.Image:
         x1, y1, x2, y2 = region.bbox
         w, h = page_image.size
-        crop = page_image.crop(
+        return page_image.crop(
             (max(0, x1 - CROP_PAD), max(0, y1 - CROP_PAD), min(w, x2 + CROP_PAD), min(h, y2 + CROP_PAD))
         )
-        return self.recognize(crop)
+
+    def recognize_region(self, page_image: Image.Image, region: TextRegion) -> str:
+        return self.recognize(self.crop_region(page_image, region))
 
 
 def clean_ocr_text(text: str) -> str:

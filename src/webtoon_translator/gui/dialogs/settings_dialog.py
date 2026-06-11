@@ -84,6 +84,18 @@ class SettingsDialog(QDialog):
         self.device_combo.setCurrentText(settings.device_preference)
         form.addRow("Compute device", self.device_combo)
 
+        self.ocr_batch_spin = QSpinBox()
+        self.ocr_batch_spin.setRange(1, 16)
+        self.ocr_batch_spin.setValue(settings.ocr_batch_size)
+        self.ocr_batch_spin.setToolTip("Bubbles recognized per OCR pass. Higher = faster but uses more RAM.")
+        form.addRow("OCR batch size", self.ocr_batch_spin)
+
+        self.threads_spin = QSpinBox()
+        self.threads_spin.setRange(0, 64)
+        self.threads_spin.setSpecialValueText("all cores")
+        self.threads_spin.setValue(settings.cpu_threads)
+        form.addRow("CPU threads", self.threads_spin)
+
         self.format_combo = QComboBox()
         self.format_combo.addItems(["png", "jpg", "webp"])
         self.format_combo.setCurrentText(settings.export_format)
@@ -138,5 +150,7 @@ class SettingsDialog(QDialog):
         s.device_preference = self.device_combo.currentText()
         s.export_format = self.format_combo.currentText()
         s.export_quality = self.quality_spin.value()
+        s.ocr_batch_size = self.ocr_batch_spin.value()
+        s.cpu_threads = self.threads_spin.value()
         s.save()
         return s

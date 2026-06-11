@@ -35,7 +35,12 @@ def _required_files(spec: ModelSpec) -> list[str]:
 
 def is_downloaded(key: str) -> bool:
     marker = model_path(key) / ".complete"
-    return marker.exists()
+    if not marker.exists():
+        return False
+    try:
+        return marker.read_text() == MODELS[key].signature
+    except OSError:
+        return False
 
 
 def missing_models() -> list[ModelSpec]:
@@ -65,7 +70,7 @@ def download_model(
         )
     if progress_cb:
         progress_cb(spec.key, "", len(files), len(files))
-    (target / ".complete").write_text(spec.revision)
+    (target / ".complete").write_text(spec.signature)
     log.info("downloaded %s -> %s", spec.repo_id, target)
     return target
 

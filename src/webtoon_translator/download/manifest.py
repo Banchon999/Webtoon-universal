@@ -13,14 +13,21 @@ class ModelSpec:
     approx_mb: int
     allow_patterns: tuple[str, ...] = field(default_factory=tuple)
 
+    @property
+    def signature(self) -> str:
+        """Identifies what was downloaded; changing revision or the file set
+        invalidates an existing download."""
+        return self.revision + ":" + ",".join(sorted(self.allow_patterns))
+
 
 MODELS: dict[str, ModelSpec] = {
     "detector": ModelSpec(
         key="detector",
         repo_id="ogkalu/comic-text-and-bubble-detector",
         revision="16e8a622f91fabc6b5b65c96d32d1183f8843546",
-        approx_mb=180,
-        allow_patterns=("config.json", "preprocessor_config.json", "model.safetensors"),
+        approx_mb=50,
+        # int8 ONNX export: ~3x faster than fp32 torch on CPU, no torch weights needed
+        allow_patterns=("detector-v4-s_int8.onnx",),
     ),
     "ocr": ModelSpec(
         key="ocr",
