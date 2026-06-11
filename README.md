@@ -8,7 +8,7 @@ A desktop app that translates webtoons/comics end-to-end: bubble detection, OCR,
 
 | ขั้นตอน | เทคโนโลยี |
 |---|---|
-| 1. ตรวจจับบับเบิลและข้อความ | [ogkalu/comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) (RT-DETR-v2) + tiled inference สำหรับภาพยาว |
+| 1. ตรวจจับบับเบิลและข้อความ | [ogkalu/comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) (RT-DETR-v2, **int8 ONNX** — เร็วระดับวินาทีต่อหน้าบน CPU) + tiled inference สำหรับภาพยาว |
 | 2. อ่านข้อความ (OCR) | [PaddlePaddle/PaddleOCR-VL-1.6](https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6) (VLM 1B รองรับหลายภาษา) |
 | 3. ลบข้อความเดิม (inpainting) | [Carve/LaMa-ONNX](https://huggingface.co/Carve/LaMa-ONNX) + fast-fill สำหรับบับเบิลพื้นเรียบ |
 | 4. แปลภาษา + Glossary | [OpenRouter](https://openrouter.ai) (เลือกโมเดล LLM ได้อิสระ) |
@@ -19,6 +19,7 @@ A desktop app that translates webtoons/comics end-to-end: bubble detection, OCR,
 - แก้ไขผล OCR / คำแปล / ฟอนต์ ได้ทีละบับเบิลใน GUI
 - โมเดล AI ดาวน์โหลดอัตโนมัติครั้งแรกที่เปิดแอพ (~2.3 GB)
 - รัน CPU ได้ทุกเครื่อง; ใช้ CUDA อัตโนมัติเมื่อรันจาก source พร้อม GPU
+- ปรับจูนความเร็วได้ใน Settings: OCR batch size, จำนวน CPU threads; ขั้นแปลภาษา (รอ API) ทำงานซ้อนกับขั้นลบข้อความโดยอัตโนมัติ
 
 ## Download (Windows)
 

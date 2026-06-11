@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 from PIL import Image
 
@@ -177,7 +178,63 @@ def reading_order(regions: list[TextRegion], rtl: bool = False) -> list[TextRegi
     return sorted(regions, key=key)
 
 
+class OnnxBubbleDetector:
+    """Default detector: ogkalu's int8 ONNX export (detector-v4-s_int8.onnx).
+
+    The export embeds RT-DETR post-processing: it takes `orig_target_sizes`
+    in (width, height) order and returns labels/boxes/scores directly.
+    ~3x faster than the fp32 PyTorch path on CPU and needs no torch weights.
+    """
+
+    ONNX_FILE = "detector-v4-s_int8.onnx"
+    INPUT_SIZE = 640
+    ID2LABEL = {0: RegionClass.BUBBLE, 1: RegionClass.TEXT_BUBBLE, 2: RegionClass.TEXT_FREE}
+
+    def __init__(self, model_dir, providers: list[str] | None = None):
+        import onnxruntime as ort
+
+        path = str(Path(model_dir) / self.ONNX_FILE)
+        self.session = ort.InferenceSession(path, providers=providers or ["CPUExecutionProvider"])
+
+    def detect(self, image: Image.Image, threshold: float = 0.35) -> list[TextRegion]:
+        image = image.convert("RGB")
+        w, h = image.size
+        raw: list[RawBox] = []
+        for y0, y1 in compute_tiles(w, h):
+            tile = image.crop((0, y0, w, y1))
+            raw.extend(self._detect_tile(tile, y0, threshold))
+        merged = merge_boxes(raw)
+        regions = link_regions(merged)
+        log.info("detected %d regions (%d raw boxes)", len(regions), len(raw))
+        return regions
+
+    def _detect_tile(self, tile: Image.Image, y_offset: int, threshold: float) -> list[RawBox]:
+        import numpy as np
+
+        tw, th = tile.size
+        resized = tile.resize((self.INPUT_SIZE, self.INPUT_SIZE))
+        x = (np.asarray(resized, dtype=np.float32) / 255.0).transpose(2, 0, 1)[None]
+        sizes = np.array([[tw, th]], dtype=np.int64)  # (width, height) per the export
+        labels, boxes, scores = self.session.run(None, {"images": x, "orig_target_sizes": sizes})
+        out: list[RawBox] = []
+        for label, box, score in zip(labels[0], boxes[0], scores[0]):
+            if score < threshold:
+                continue
+            cls = self.ID2LABEL.get(int(label))
+            if cls is None:
+                continue
+            x1, y1, x2, y2 = (int(v) for v in box)
+            x1, y1 = max(0, x1), max(0, y1) + y_offset
+            x2, y2 = min(tw, x2), min(th, y2) + y_offset
+            if x2 <= x1 or y2 <= y1:
+                continue
+            out.append(RawBox(bbox=(x1, y1, x2, y2), cls=cls, score=float(score)))
+        return out
+
+
 class BubbleDetector:
+    """Fallback PyTorch detector (used only when the ONNX file is absent)."""
+
     def __init__(self, model_dir, device: str = "cpu"):
         import torch
         from transformers import AutoImageProcessor, AutoModelForObjectDetection

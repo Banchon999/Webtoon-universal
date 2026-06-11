@@ -222,6 +222,8 @@ class MainWindow(QMainWindow):
             rtl_reading_order=self.app_settings.rtl_reading_order,
             api_key=self.app_settings.openrouter_api_key,
             work_dir=work,
+            ocr_batch_size=self.app_settings.ocr_batch_size,
+            cpu_threads=self.app_settings.cpu_threads,
         )
 
     def _ensure_worker(self) -> PipelineWorker:

@@ -22,6 +22,8 @@ class AppSettings:
     export_format: str = "png"  # png | jpg | webp
     export_quality: int = 92
     default_font: str = "auto"
+    ocr_batch_size: int = 4
+    cpu_threads: int = 0  # 0 = use all cores
 
     @classmethod
     def load(cls) -> AppSettings:
